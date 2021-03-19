@@ -479,7 +479,7 @@ public class Mutant implements Serializable {
      *
      * <p>An insertion only modifies the line it was inserted in
      */
-    private void computeLinesAndDescription() {
+    public void computeLinesAndDescription() {
         // This workflow is not really nice...
         List<Integer> mutatedLines = new ArrayList<>();
         description = new ArrayList<>();
@@ -622,6 +622,10 @@ public class Mutant implements Serializable {
     // Last created appears first
     public static Comparator<Mutant> orderByIdDescending() {
         return (o1, o2) -> o2.id - o1.id;
+    }
+
+    public int getTotalMutantsCreated(){
+        return lines.size();
     }
 
     public void setLines(List<Integer> mutatedLines) {

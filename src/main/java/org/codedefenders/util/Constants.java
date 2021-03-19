@@ -131,6 +131,7 @@ public class Constants {
     public static final String USER_GAMES_OVERVIEW_JSP = "/jsp/user_games_view.jsp";
     public static final String GAMES_HISTORY_JSP = "/jsp/games_history.jsp";
     public static final String CLASS_UPLOAD_VIEW_JSP = "/jsp/upload_class_view.jsp";
+    public static final String CREATE_CLASS_VIEW_JSP = "/jsp/create_class_view.jsp";
 
     public static final String ADMIN_USER_JSP = "/jsp/admin_user_mgmt.jsp";
     public static final String ADMIN_GAMES_JSP = "/jsp/admin_create_games.jsp";
@@ -169,10 +170,14 @@ public class Constants {
     public static final String TEST_KILLED_LAST_MESSAGE = "Great, your test killed the last mutant!";
     public static final String TEST_KILLED_ONE_MESSAGE = "Great, your test killed a mutant!";
     public static final String TEST_KILLED_N_MESSAGE = "Awesome! Your test killed %d mutants!"; // number of mutants
+    public static final String TEST_COST_WARNING = "You can't create a test, because you don't have points.";
+    public static final String COST_WON_MESSAGE = "You won %d points";
 
     public static final String MUTANT_COMPILED_MESSAGE = "Your mutant was compiled successfully.";
     public static final String MUTANT_ACCEPTED_EQUIVALENT_MESSAGE = "The mutant was accepted as equivalent.";
     public static final String MUTANT_UNCOMPILABLE_MESSAGE = "Your mutant failed to compile. Try again.";
+    public static final String MUTANT_COST_WARNING = "You can't create a mutant, because you don't have points.";
+    public static final String MUTANT_COST_WARNING_TWO = "You can't create a mutant, because you are trying to create more mutants than you have points";
 
     public static final String MUTANT_INVALID_MESSAGE = "Invalid mutant, sorry! Your mutant is identical to the CUT or "
             + "it contains invalid code (ifs, loops, or new logical ops.)";

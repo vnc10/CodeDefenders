@@ -36,7 +36,7 @@ public interface IMutationTester {
     // AbstractGame !
     /**
      * Execute the test against all the other players' mutants
-     * 
+     *
      * @param game
      * @param newMutant
      * @param messages
@@ -46,7 +46,7 @@ public interface IMutationTester {
     /**
      * Execute all the tests registered from all the other players against the
      * provided mutant, using a random scheduling of test execution.
-     * 
+     *
      * @param game
      * @param newMutant
      * @param messages
@@ -62,7 +62,6 @@ public interface IMutationTester {
      * @param messages
      */
     void runAllTestsOnMutant(AbstractGame game, Mutant mutant, ArrayList<String> messages);
-
     /**
      * Execute all the tests registered for the defenders against the provided
      * mutant, using a the given TestScheduler for ordering the execution of tests.

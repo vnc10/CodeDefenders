@@ -98,6 +98,10 @@ public class MultiplayerGame extends AbstractGame {
         private GameState state = GameState.CREATED;
         private GameLevel level = GameLevel.HARD;
         private CodeValidatorLevel mutantValidatorLevel = CodeValidatorLevel.STRICT;
+        private int attackerCostActivity = 1;
+        private int defenderCostActivity = 1;
+        private int attackerStartCostActivity = 10;
+        private int defenderStartCostActivity = 10;
 
         private int automaticMutantEquivalenceThreshold = 0;
 
@@ -124,6 +128,24 @@ public class MultiplayerGame extends AbstractGame {
 
         public Builder capturePlayersIntention(boolean capturePlayersIntention) {
             this.capturePlayersIntention = capturePlayersIntention;
+            return this;
+        }
+
+        public Builder attackerCostActivity(int attackerCostActivity) {
+            this.attackerCostActivity = attackerCostActivity;
+            return this;
+        }
+
+        public Builder defenderCostActivity(int defenderCostActivity) {
+            this.defenderCostActivity = defenderCostActivity;
+            return this;
+        }
+        public Builder attackerStartCostActivity(int attackerStartCostActivity) {
+            this.attackerStartCostActivity = attackerStartCostActivity;
+            return this;
+        }
+        public Builder defenderStartCostActivity(int defenderStartCostActivity) {
+            this.defenderStartCostActivity = defenderStartCostActivity;
             return this;
         }
 
@@ -207,6 +229,10 @@ public class MultiplayerGame extends AbstractGame {
         this.attackerValue = builder.attackerValue;
         this.lineCoverage = builder.lineCoverage;
         this.mutantCoverage = builder.mutantCoverage;
+        this.attackerCostActivity = builder.attackerCostActivity;
+        this.defenderCostActivity = builder.defenderCostActivity;
+        this.attackerStartCostActivity = builder.attackerStartCostActivity;
+        this.defenderStartCostActivity = builder.defenderStartCostActivity;
         this.prize = builder.prize;
         this.requiresValidation = builder.requiresValidation;
         this.maxAssertionsPerTest = builder.maxAssertionsPerTest;

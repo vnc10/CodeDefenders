@@ -34,6 +34,7 @@ import javax.enterprise.inject.Alternative;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.codedefenders.database.EventDAO;
+import org.codedefenders.database.MultiplayerGameDAO;
 import org.codedefenders.database.UserDAO;
 import org.codedefenders.game.AbstractGame;
 import org.codedefenders.game.Mutant;
@@ -47,15 +48,8 @@ import org.codedefenders.model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.codedefenders.util.Constants.MUTANT_ALIVE_1_MESSAGE;
-import static org.codedefenders.util.Constants.MUTANT_ALIVE_N_MESSAGE;
-import static org.codedefenders.util.Constants.MUTANT_KILLED_BY_TEST_MESSAGE;
-import static org.codedefenders.util.Constants.MUTANT_SUBMITTED_MESSAGE;
-import static org.codedefenders.util.Constants.TEST_KILLED_LAST_MESSAGE;
-import static org.codedefenders.util.Constants.TEST_KILLED_N_MESSAGE;
-import static org.codedefenders.util.Constants.TEST_KILLED_ONE_MESSAGE;
-import static org.codedefenders.util.Constants.TEST_KILLED_ZERO_MESSAGE;
-import static org.codedefenders.util.Constants.TEST_SUBMITTED_MESSAGE;
+import static org.codedefenders.util.Constants.*;
+import static org.codedefenders.util.Constants.COST_WON_MESSAGE;
 
 /**
  * This is a parallel implementation of IMutationTester. Parallelism is achieved
@@ -82,66 +76,27 @@ public class ParallelMutationTester extends MutationTester //
         int killed = 0;
         List<Mutant> mutants = game.getAliveMutants();
         mutants.addAll(game.getMutantsMarkedEquivalentPending());
-        List<Mutant> killedMutants = new ArrayList<Mutant>();
+        List<Mutant> killedMutants = new ArrayList<>();
 
         // Acquire and release the connection
         User u = UserDAO.getUserForPlayer(test.getPlayerId());
 
-        // Fork and Join parallelization
-        Map<Mutant, FutureTask<Boolean>> tasks = new HashMap<Mutant, FutureTask<Boolean>>();
-        for (final Mutant mutant : mutants) {
+        for (Mutant mutant : mutants) {
             if (useMutantCoverage && !test.isMutantCovered(mutant)) {
                 // System.out.println("Skipping non-covered mutant "
                 // + mutant.getId() + ", test " + test.getId());
                 continue;
             }
 
-            FutureTask<Boolean> task = new FutureTask<Boolean>(new Callable<Boolean>() {
-
-                @Override
-                public Boolean call() throws Exception {
-                    // This automatically update the 'mutants' and 'tests'
-                    // tables, as well as the test and mutant objects.
-                    return testVsMutant(test, mutant);
-                }
-            });
-
-            // This is for checking later
-            tasks.put(mutant, task);
-
-            testExecutorThreadPool.execute(task);
-        }
-
-        // TODO Mayse use some timeout ?!
-        for (final Mutant mutant : mutants) {
-            if (useMutantCoverage && !test.isMutantCovered(mutant)) {
-                continue;
-            }
-
-            // checks if task done
-            // System.out.println(
-            // "Is mutant done? " + tasks.get(mutant).isDone());
-            // checks if task canceled
-            // System.out.println("Is mutant cancelled? "
-            // + tasks.get(mutant).isCancelled());
-            // fetches result and waits if not ready
-
-            // THIS IS BLOCKING !!!
-            try {
-                if (tasks.get(mutant).get()) {
-                    killed++;
-                    killedMutants.add(mutant);
-                }
-            } catch (InterruptedException | ExecutionException | CancellationException e) {
-                logger.error("While waiting results for mutant " + mutant, e);
+            if (testVsMutant(test, mutant)) {
+                killed++;
+                killedMutants.add(mutant);
             }
         }
-
-        tasks.clear();
 
         for (Mutant mutant : mutants) {
             if (mutant.isAlive()) {
-                ArrayList<Test> missedTests = new ArrayList<Test>();
+                ArrayList<Test> missedTests = new ArrayList<>();
 
                 for (int lm : mutant.getLines()) {
                     boolean found = false;
@@ -165,6 +120,9 @@ public class ParallelMutationTester extends MutationTester //
         // test.update();
         test.incrementScore(Scorer.score(game, test, killedMutants));
 
+        int defenderStartCostActivity = game.getDefenderStartCostActivity();
+        int defenderCostActivity = game.getDefenderCostActivity();
+
         if (killed == 0) {
             if (mutants.size() == 0) {
                 messages.add(TEST_SUBMITTED_MESSAGE);
@@ -175,15 +133,24 @@ public class ParallelMutationTester extends MutationTester //
             Event notif = new Event(-1, game.getId(), u.getId(),
                     u.getUsername() + "&#39;s test kills " + killed + " " + "mutants.",
                     EventType.DEFENDER_KILLED_MUTANT, EventStatus.GAME, new Timestamp(System.currentTimeMillis()));
+
             eventDAO.insert(notif);
+
             if (killed == 1) {
+                int resultDefender = defenderStartCostActivity + defenderCostActivity;
                 if (mutants.size() == 1) {
+                    messages.add(String.format(COST_WON_MESSAGE, killed));
                     messages.add(TEST_KILLED_LAST_MESSAGE);
                 } else {
+                    messages.add(String.format(COST_WON_MESSAGE, killed));
                     messages.add(TEST_KILLED_ONE_MESSAGE);
                 }
+                boolean updateDefenderCost = MultiplayerGameDAO.updateDefenderCost(game, resultDefender);
             } else {
+                int resultDefender = defenderStartCostActivity + defenderCostActivity * killed;
+                boolean updateDefenderCost = MultiplayerGameDAO.updateDefenderCost(game, resultDefender);
                 messages.add(String.format(TEST_KILLED_N_MESSAGE, killed));
+                messages.add(String.format(COST_WON_MESSAGE, killed));
             }
 
         }
@@ -198,98 +165,49 @@ public class ParallelMutationTester extends MutationTester //
      */
     @Override
     public void runAllTestsOnMutant(AbstractGame game, Mutant mutant, ArrayList<String> messages,
-            TestScheduler scheduler) {
+                                    TestScheduler scheduler) {
         // Schedule the executable tests submitted by the defenders only (true)
         List<Test> tests = scheduler.scheduleTests(game.getTests(true));
 
         User u = UserDAO.getUserForPlayer(mutant.getPlayerId());
+        int attackerStartCostActivity = game.getAttackerStartCostActivity();
+        int attackerCostActivity = game.getAttackerCostActivity() * 2;
+        int defenderStartCostActivity = game.getDefenderStartCostActivity();
+        int defenderCostActivity = game.getDefenderCostActivity();
 
-        final Map<Test, FutureTask<Boolean>> tasks = new HashMap<Test, FutureTask<Boolean>>();
         for (Test test : tests) {
             if (useMutantCoverage && !test.isMutantCovered(mutant)) {
                 logger.info("Skipping non-covered mutant " + mutant.getId() + ", test " + test.getId());
                 continue;
             }
 
-            FutureTask<Boolean> task = new FutureTask<Boolean>(new Callable<Boolean>() {
-
-                @Override
-                public Boolean call() throws Exception {
-                    logger.info("Executing mutant " + mutant.getId() + ", test " + test.getId());
-                    // TODO Is this testVsMutant thread safe?
-                    return testVsMutant(test, mutant);
-                }
-            });
-
-            // Book keeping
-            tasks.put(test, task);
-        }
-
-        // Submit all the tests in the given order
-        for (Test test : tests) {
-            if (tasks.containsKey(test)) {
-                logger.debug("MutationTester.runAllTestsOnMutant() : Scheduling Task " + test);
-                testExecutorThreadPool.execute(tasks.get(test));
-            }
-        }
-
-        // Wait for the result. Check by the order defined by the scheduler.
-        for (Test test : tests) {
-            // Why this happens ?
-            if (!tasks.containsKey(test)) {
-                logger.debug("Tasks does not contain " + test.getId());
-                continue;
-            }
-
-            Future<Boolean> task = tasks.get(test);
-            logger.debug("MutationTester.runAllTestsOnMutant() Checking task " + task + ". Done: " + task.isDone()
-                    + ". Cancelled: " + task.isCancelled());
-            try {
-
-                boolean hasTestkilledTheMutant = false;
-
-                try {
-                    hasTestkilledTheMutant = task.get();
-                } catch (CancellationException ce) {
-                    //
-                    logger.warn("Swallowing ", ce);
+            if (testVsMutant(test, mutant)) {
+                int resultDefender = defenderStartCostActivity + defenderCostActivity;
+                boolean updateDefenderCost = MultiplayerGameDAO.updateDefenderCostAbstract(game, resultDefender);
+                logger.info("Test {} kills mutant {}", test.getId(), mutant.getId());
+                messages.add(String.format(MUTANT_KILLED_BY_TEST_MESSAGE, test.getId()));
+                if (game instanceof MultiplayerGame) {
+                    ArrayList<Mutant> mlist = new ArrayList<>();
+                    mlist.add(mutant);
+                    // test.setScore(Scorer.score((MultiplayerGame) game, test,
+                    // mlist));
+                    // test.update();
+                    test.incrementScore(Scorer.score((MultiplayerGame) game, test, mlist));
                 }
 
-                if (hasTestkilledTheMutant) {
-                    // This test killede the mutant...
-                    messages.add(String.format(MUTANT_KILLED_BY_TEST_MESSAGE, test.getId()));
+                Event notif = new Event(-1, game.getId(), UserDAO.getUserForPlayer(test.getPlayerId()).getId(),
+                        u.getUsername() + "&#39;s mutant is killed", EventType.DEFENDER_KILLED_MUTANT, EventStatus.GAME,
+                        new Timestamp(System.currentTimeMillis()));
+                eventDAO.insert(notif);
 
-                    if (game instanceof MultiplayerGame) {
-                        ArrayList<Mutant> mlist = new ArrayList<Mutant>();
-                        mlist.add(mutant);
-
-                        logger.info(">> Test {} kills mutant {} get {} points. Mutant is still alive ? {}",
-                                test.getId(), mutant.getId(), Scorer.score((MultiplayerGame) game, test, mlist),
-                                mutant.isAlive());
-
-                        test.incrementScore(Scorer.score((MultiplayerGame) game, test, mlist));
-                    }
-
-                    Event notif = new Event(-1, game.getId(), UserDAO.getUserForPlayer(test.getPlayerId()).getId(),
-                            u.getUsername() + "&#39;s mutant is killed", EventType.DEFENDER_KILLED_MUTANT,
-                            EventStatus.GAME, new Timestamp(System.currentTimeMillis()));
-                    eventDAO.insert(notif);
-
-                    // Early return. No need to check for the other executions.
-                    return;
-
-                }
-            } catch (InterruptedException | ExecutionException e) {
-                logger.warn(
-                        "MutationTester.runAllTestsOnMutant() ERROR While waiting results for task " + e.getMessage());
-                // e.printStackTrace();
+                return; // return as soon as the first test kills the mutant we return
             }
         }
 
         // TODO In the original implementation (see commit
         // 4fbdc78304374ee31a06d56f8ce67ca80309e24c for example)
         // the first block and the second one are swapped. Why ?
-        ArrayList<Test> missedTests = new ArrayList<Test>();
+        ArrayList<Test> missedTests = new ArrayList<>();
         if (game instanceof MultiplayerGame) {
             for (Test t : tests) {
                 if (CollectionUtils.containsAny(t.getLineCoverage().getLinesCovered(), mutant.getLines())) {
@@ -301,19 +219,26 @@ public class ParallelMutationTester extends MutationTester //
             // mutant.update();
             mutant.incrementScore(1 + Scorer.score((MultiplayerGame) game, mutant, missedTests));
         }
-
         int nbRelevantTests = missedTests.size();
+        int TotalMutantsCreated = mutant.getTotalMutantsCreated();
         // Mutant survived
         if (nbRelevantTests == 0) {
+            int result = attackerStartCostActivity - (attackerCostActivity * TotalMutantsCreated);
+            boolean updateAttackerCost2 = MultiplayerGameDAO.updateAttackerCostAbstract(game, result);
             messages.add(MUTANT_SUBMITTED_MESSAGE);
         } else if (nbRelevantTests <= 1) {
+            int resultDefender = attackerStartCostActivity + attackerCostActivity;
+            boolean updateAttackerCost2 = MultiplayerGameDAO.updateAttackerCostAbstract(game, resultDefender);
+            messages.add(String.format(COST_WON_MESSAGE, nbRelevantTests * attackerCostActivity));
             messages.add(MUTANT_ALIVE_1_MESSAGE);
         } else {
+            int resultDefender = attackerStartCostActivity + attackerCostActivity * nbRelevantTests;
+            boolean updateAttackerCost2 = MultiplayerGameDAO.updateAttackerCostAbstract(game, resultDefender);
+            messages.add(String.format(COST_WON_MESSAGE, nbRelevantTests * attackerCostActivity));
             messages.add(String.format(MUTANT_ALIVE_N_MESSAGE, nbRelevantTests));
         }
         Event notif = new Event(-1, game.getId(), u.getId(), u.getUsername() + "&#39;s mutant survives the test suite.",
                 EventType.ATTACKER_MUTANT_SURVIVED, EventStatus.GAME, new Timestamp(System.currentTimeMillis()));
         eventDAO.insert(notif);
     }
-
 }

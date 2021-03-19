@@ -61,6 +61,10 @@ public class MultiplayerGameDAO {
         int creatorId = rs.getInt("Creator_ID");
         GameState state = GameState.valueOf(rs.getString("State"));
         GameLevel level = GameLevel.valueOf(rs.getString("Level"));
+        int attackerCostActivity = rs.getInt("Attacker_Cost_Activity");
+        int defenderCostActivity = rs.getInt("Defender_Cost_Activity");
+        int attackerStartCostActivity = rs.getInt("Attacker_Start_Cost_Activity");
+        int defenderStartCostActivity = rs.getInt("Defender_Start_Cost_Activity");
         int maxAssertionsPerTest = rs.getInt("MaxAssertionsPerTest");
         boolean chatEnabled = rs.getBoolean("ChatEnabled");
         CodeValidatorLevel mutantValidator = CodeValidatorLevel.valueOf(rs.getString("MutantValidator"));
@@ -79,6 +83,10 @@ public class MultiplayerGameDAO {
                 .state(state)
                 .level(level)
                 .attackerValue(attackerValue)
+                .attackerCostActivity(attackerCostActivity)
+                .defenderCostActivity(defenderCostActivity)
+                .attackerStartCostActivity(attackerStartCostActivity)
+                .defenderStartCostActivity(defenderStartCostActivity)
                 .defenderValue(defenderValue)
                 .chatEnabled(chatEnabled)
                 .capturePlayersIntention(capturePlayersIntention)
@@ -155,6 +163,10 @@ public class MultiplayerGameDAO {
         float prize = game.getPrize();
         int defenderValue = game.getDefenderValue();
         int attackerValue = game.getAttackerValue();
+        int attackerCostActivity = game.getAttackerCostActivity();
+        int defenderCostActivity = game.getDefenderCostActivity();
+        int attackerStartCostActivity = game.getAttackerStartCostActivity();
+        int defenderStartCostActivity = game.getDefenderStartCostActivity();
         float lineCoverage = game.getLineCoverage();
         float mutantCoverage = game.getMutantCoverage();
         int creatorId = game.getCreatorId();
@@ -173,6 +185,10 @@ public class MultiplayerGameDAO {
                 "Prize,",
                 "Defender_Value,",
                 "Attacker_Value,",
+                "Attacker_Cost_Activity,",
+                "Defender_Cost_Activity,",
+                "Attacker_Start_Cost_Activity,",
+                "Defender_Start_Cost_Activity,",
                 "Coverage_Goal,",
                 "Mutant_Goal,",
                 "Creator_ID,",
@@ -183,7 +199,7 @@ public class MultiplayerGameDAO {
                 "MutantValidator,",
                 "CapturePlayersIntention,",
                 "EquivalenceThreshold)",
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
 
         DatabaseValue[] values = new DatabaseValue[]{
                 DatabaseValue.of(classId),
@@ -191,6 +207,10 @@ public class MultiplayerGameDAO {
                 DatabaseValue.of(prize),
                 DatabaseValue.of(defenderValue),
                 DatabaseValue.of(attackerValue),
+                DatabaseValue.of(attackerCostActivity),
+                DatabaseValue.of(defenderCostActivity),
+                DatabaseValue.of(attackerStartCostActivity),
+                DatabaseValue.of(defenderStartCostActivity),
                 DatabaseValue.of(lineCoverage),
                 DatabaseValue.of(mutantCoverage),
                 DatabaseValue.of(creatorId),
@@ -274,6 +294,94 @@ public class MultiplayerGameDAO {
         };
 
         return DB.executeQueryReturnValue(query, MultiplayerGameDAO::multiplayerGameFromRS, values);
+    }
+
+    public static boolean updateAttackerCost(MultiplayerGame game, int resultDefender) {
+        int classId = game.getClassId();
+        int attackerCost = resultDefender;
+        int id = game.getId();
+        GameState state = game.getState();
+
+        String query = String.join("\n",
+                "UPDATE games",
+                "SET Class_ID = ?,",
+                "    Attacker_Start_Cost_Activity = ?,",
+                "    State = ?",
+                "WHERE ID = ?"
+        );
+        DatabaseValue[] values = new DatabaseValue[]{
+                DatabaseValue.of(classId),
+                DatabaseValue.of(attackerCost),
+                DatabaseValue.of(state.name()),
+                DatabaseValue.of(id)};
+
+        return DB.executeUpdateQuery(query, values);
+    }
+
+    public static boolean updateAttackerCostAbstract(AbstractGame game, int resultDefender) {
+        int classId = game.getClassId();
+        int attackerCost = resultDefender;
+        int id = game.getId();
+        GameState state = game.getState();
+
+        String query = String.join("\n",
+                "UPDATE games",
+                "SET Class_ID = ?,",
+                "    Attacker_Start_Cost_Activity = ?,",
+                "    State = ?",
+                "WHERE ID = ?"
+        );
+        DatabaseValue[] values = new DatabaseValue[]{
+                DatabaseValue.of(classId),
+                DatabaseValue.of(attackerCost),
+                DatabaseValue.of(state.name()),
+                DatabaseValue.of(id)};
+
+        return DB.executeUpdateQuery(query, values);
+    }
+
+    public static boolean updateDefenderCost(MultiplayerGame game, int resultDefender) {
+        int classId = game.getClassId();
+        int defenderCost = resultDefender;
+        int id = game.getId();
+        GameState state = game.getState();
+
+        String query = String.join("\n",
+                "UPDATE games",
+                "SET Class_ID = ?,",
+                "    Defender_Start_Cost_Activity = ?,",
+                "    State = ?",
+                "WHERE ID = ?"
+        );
+        DatabaseValue[] values = new DatabaseValue[]{
+                DatabaseValue.of(classId),
+                DatabaseValue.of(defenderCost),
+                DatabaseValue.of(state.name()),
+                DatabaseValue.of(id)};
+
+        return DB.executeUpdateQuery(query, values);
+    }
+
+    public static boolean updateDefenderCostAbstract(AbstractGame game, int resultDefender) {
+        int classId = game.getClassId();
+        int defenderCost = resultDefender;
+        int id = game.getId();
+        GameState state = game.getState();
+
+        String query = String.join("\n",
+                "UPDATE games",
+                "SET Class_ID = ?,",
+                "    Defender_Start_Cost_Activity = ?,",
+                "    State = ?",
+                "WHERE ID = ?"
+        );
+        DatabaseValue[] values = new DatabaseValue[]{
+                DatabaseValue.of(classId),
+                DatabaseValue.of(defenderCost),
+                DatabaseValue.of(state.name()),
+                DatabaseValue.of(id)};
+
+        return DB.executeUpdateQuery(query, values);
     }
 
     /**

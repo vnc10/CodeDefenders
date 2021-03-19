@@ -48,6 +48,7 @@ public class Paths {
     public static final String GAMES_OVERVIEW = "/games/overview";
     public static final String GAMES_HISTORY = "/games/history";
     public static final String CLASS_UPLOAD = "/class-upload";
+    public static final String CREATE_CLASS = "/create-a-class";
 
     public static final String PROJECT_EXPORT = "/project-export";
 

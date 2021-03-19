@@ -101,15 +101,19 @@ import static org.codedefenders.servlets.util.ServletUtils.ctx;
 import static org.codedefenders.util.Constants.GRACE_PERIOD_MESSAGE;
 import static org.codedefenders.util.Constants.MODE_BATTLEGROUND_DIR;
 import static org.codedefenders.util.Constants.MUTANT_COMPILED_MESSAGE;
+import static org.codedefenders.util.Constants.MUTANT_COST_WARNING;
+import static org.codedefenders.util.Constants.MUTANT_COST_WARNING_TWO;
 import static org.codedefenders.util.Constants.MUTANT_CREATION_ERROR_MESSAGE;
 import static org.codedefenders.util.Constants.MUTANT_DUPLICATED_MESSAGE;
 import static org.codedefenders.util.Constants.MUTANT_UNCOMPILABLE_MESSAGE;
+import static org.codedefenders.util.Constants.TEST_COST_WARNING;
 import static org.codedefenders.util.Constants.TEST_DID_NOT_COMPILE_MESSAGE;
 import static org.codedefenders.util.Constants.TEST_DID_NOT_KILL_CLAIMED_MUTANT_MESSAGE;
 import static org.codedefenders.util.Constants.TEST_DID_NOT_PASS_ON_CUT_MESSAGE;
 import static org.codedefenders.util.Constants.TEST_GENERIC_ERROR_MESSAGE;
 import static org.codedefenders.util.Constants.TEST_KILLED_CLAIMED_MUTANT_MESSAGE;
 import static org.codedefenders.util.Constants.TEST_PASSED_ON_CUT_MESSAGE;
+
 
 /**
  * This {@link HttpServlet} handles retrieval and in-game management for {@link MultiplayerGame battleground games}.
@@ -345,159 +349,175 @@ public class MultiplayerGameManager extends HttpServlet {
         }
         final String testText = test.get();
 
-        TestSubmittedEvent tse = new TestSubmittedEvent();
-        tse.setGameId(gameId);
-        tse.setUserId(login.getUserId());
-        notificationService.post(tse);
+        int defenderStartCostActivity = game.getDefenderStartCostActivity();
+        int defenderCostActivity = game.getDefenderCostActivity();
 
-        // Do the validation even before creating the mutant
-        // TODO Here we need to account for #495
-        List<String> validationMessage = CodeValidator.validateTestCodeGetMessage(
-                testText,
-                game.getMaxAssertionsPerTest(),
-                game.getCUT().getAssertionLibrary());
-        boolean validationSuccess = validationMessage.isEmpty();
-
-        TestValidatedEvent tve = new TestValidatedEvent();
-        tve.setGameId(gameId);
-        tve.setUserId(login.getUserId());
-        tve.setSuccess(validationSuccess);
-        tve.setValidationMessage(validationSuccess ? null : String.join("\n", validationMessage));
-        notificationService.post(tve);
-
-        if (!validationSuccess) {
-            messages.getBridge().addAll(validationMessage);
+        if (defenderStartCostActivity - defenderCostActivity < 0) {
+            messages.add(TEST_COST_WARNING);
             previousSubmission.setTestCode(testText);
             response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
             return;
         }
 
-        // From this point on we assume that test is valid according to the rules (but it might still not compile)
-        Test newTest;
-        try {
-            newTest = gameManagingUtils.createTest(gameId, game.getClassId(), testText, login.getUserId(), MODE_BATTLEGROUND_DIR);
-        } catch (IOException io) {
-            messages.add(TEST_GENERIC_ERROR_MESSAGE);
-            previousSubmission.setTestCode(testText);
-            response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
-            return;
-        }
+        else {
 
-        /*
-         * Validation of Players Intention: if intentions must be
-         * collected but none are specified in the user request we fail
-         * the request, but keep the test code in the session
-         */
-        Set<Integer> selectedLines = new HashSet<>();
-        Set<Integer> selectedMutants = new HashSet<>();
+            TestSubmittedEvent tse = new TestSubmittedEvent();
+            tse.setGameId(gameId);
+            tse.setUserId(login.getUserId());
+            notificationService.post(tse);
 
-        if (game.isCapturePlayersIntention()) {
-            boolean validatedCoveredLines = true;
-            // boolean validatedKilledMutants = true;
+            // Do the validation even before creating the mutant
+            // TODO Here we need to account for #495
+            List<String> validationMessage = CodeValidator.validateTestCodeGetMessage(
+                    testText,
+                    game.getMaxAssertionsPerTest(),
+                    game.getCUT().getAssertionLibrary());
+            boolean validationSuccess = validationMessage.isEmpty();
 
-            // Prepare the validation message
-            StringBuilder userIntentionsValidationMessage = new StringBuilder();
-            userIntentionsValidationMessage.append("Cheeky! You cannot submit a test without specifying");
+            TestValidatedEvent tve = new TestValidatedEvent();
+            tve.setGameId(gameId);
+            tve.setUserId(login.getUserId());
+            tve.setSuccess(validationSuccess);
+            tve.setValidationMessage(validationSuccess ? null : String.join("\n", validationMessage));
+            notificationService.post(tve);
 
-            final String selected_lines = request.getParameter("selected_lines");
-            if (selected_lines != null) {
-                Set<Integer> selectLinesSet =
-                        DefenderIntention.parseIntentionFromCommaSeparatedValueString(selected_lines);
-                selectedLines.addAll(selectLinesSet);
-            }
-
-            if (selectedLines.isEmpty()) {
-                validatedCoveredLines = false;
-                userIntentionsValidationMessage.append(" a line to cover");
-            }
-            // NOTE: We consider only covering lines at the moment
-            // if (request.getParameter("selected_mutants") != null) {
-            // selectedMutants.addAll(DefenderIntention
-            // .parseIntentionFromCommaSeparatedValueString(request.getParameter("selected_mutants")));
-            // }
-            // if( selectedMutants.isEmpty() &&
-            // game.isDeclareKilledMutants()) {
-            // validatedKilledMutants = false;
-            //
-            // if( selectedLines.isEmpty() &&
-            // game.isCapturePlayersIntention() ){
-            // validationMessage.append(" or");
-            // }
-            //
-            // validationMessage.append(" a mutant to kill");
-            // }
-            userIntentionsValidationMessage.append(".");
-
-            if (!validatedCoveredLines) { // || !validatedKilledMutants
-                messages.add(userIntentionsValidationMessage.toString());
-                // Keep the test around
+            if (!validationSuccess) {
+                messages.getBridge().addAll(validationMessage);
                 previousSubmission.setTestCode(testText);
                 response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
                 return;
             }
+
+            // From this point on we assume that test is valid according to the rules (but it might still not compile)
+            Test newTest;
+            try {
+                newTest = gameManagingUtils.createTest(gameId, game.getClassId(), testText, login.getUserId(), MODE_BATTLEGROUND_DIR);
+            } catch (IOException io) {
+                messages.add(TEST_GENERIC_ERROR_MESSAGE);
+                previousSubmission.setTestCode(testText);
+                response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
+                return;
+            }
+
+            /*
+             * Validation of Players Intention: if intentions must be
+             * collected but none are specified in the user request we fail
+             * the request, but keep the test code in the session
+             */
+            Set<Integer> selectedLines = new HashSet<>();
+            Set<Integer> selectedMutants = new HashSet<>();
+
+            if (game.isCapturePlayersIntention()) {
+                boolean validatedCoveredLines = true;
+                // boolean validatedKilledMutants = true;
+
+                // Prepare the validation message
+                StringBuilder userIntentionsValidationMessage = new StringBuilder();
+                userIntentionsValidationMessage.append("Cheeky! You cannot submit a test without specifying");
+
+                final String selected_lines = request.getParameter("selected_lines");
+                if (selected_lines != null) {
+                    Set<Integer> selectLinesSet =
+                            DefenderIntention.parseIntentionFromCommaSeparatedValueString(selected_lines);
+                    selectedLines.addAll(selectLinesSet);
+                }
+
+                if (selectedLines.isEmpty()) {
+                    validatedCoveredLines = false;
+                    userIntentionsValidationMessage.append(" a line to cover");
+                }
+                // NOTE: We consider only covering lines at the moment
+                // if (request.getParameter("selected_mutants") != null) {
+                // selectedMutants.addAll(DefenderIntention
+                // .parseIntentionFromCommaSeparatedValueString(request.getParameter("selected_mutants")));
+                // }
+                // if( selectedMutants.isEmpty() &&
+                // game.isDeclareKilledMutants()) {
+                // validatedKilledMutants = false;
+                //
+                // if( selectedLines.isEmpty() &&
+                // game.isCapturePlayersIntention() ){
+                // validationMessage.append(" or");
+                // }
+                //
+                // validationMessage.append(" a mutant to kill");
+                // }
+                userIntentionsValidationMessage.append(".");
+
+                if (!validatedCoveredLines) { // || !validatedKilledMutants
+                    messages.add(userIntentionsValidationMessage.toString());
+                    // Keep the test around
+                    previousSubmission.setTestCode(testText);
+                    response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
+                    return;
+                }
+            }
+
+            logger.debug("New Test {} by user {}", newTest.getId(), login.getUserId());
+            TargetExecution compileTestTarget = TargetExecutionDAO.getTargetExecutionForTest(newTest, COMPILE_TEST);
+
+            if (game.isCapturePlayersIntention()) {
+                collectDefenderIntentions(newTest, selectedLines, selectedMutants);
+                // Store intentions in the session in case tests is broken we automatically re-select the same line
+                // TODO At the moment, there is only and only one line
+                session.setAttribute("selected_lines", selectedLines.iterator().next());
+            }
+
+            if (compileTestTarget.status != TargetExecution.Status.SUCCESS) {
+                messages.add(TEST_DID_NOT_COMPILE_MESSAGE).fadeOut(false);
+                // We escape the content of the message for new tests since user can embed there anything
+                String escapedHtml = StringEscapeUtils.escapeHtml(compileTestTarget.message);
+                // Extract the line numbers of the errors
+                List<Integer> errorLines = extractErrorLines(compileTestTarget.message);
+                // Store them in the session so they can be picked up later
+                previousSubmission.setErrorLines(errorLines);
+                // We introduce our decoration
+                String decorate = decorateWithLinksToCode(escapedHtml, true, false);
+                messages.add(decorate).escape(false);
+                //
+                previousSubmission.setTestCode(testText);
+                response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
+                return;
+            }
+            TargetExecution testOriginalTarget = TargetExecutionDAO.getTargetExecutionForTest(newTest, TEST_ORIGINAL);
+            if (testOriginalTarget.status != TargetExecution.Status.SUCCESS) {
+                // testOriginalTarget.state.equals(TargetExecution.Status.FAIL)
+                //     || testOriginalTarget.state.equals(TargetExecution.Status.ERROR)
+                messages.add(TEST_DID_NOT_PASS_ON_CUT_MESSAGE).fadeOut(false);
+                messages.add(StringEscapeUtils.escapeHtml(testOriginalTarget.message));
+                previousSubmission.setTestCode(testText);
+                response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
+                return;
+            }
+
+            messages.add(TEST_PASSED_ON_CUT_MESSAGE);
+
+            // Include Test Smells in the messages back to user
+            includeDetectTestSmellsInMessages(newTest);
+
+            final String message = login.getUser().getUsername() + " created a test";
+            final Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+            final Event notif = new Event(-1, gameId, login.getUserId(), message, EventType.DEFENDER_TEST_CREATED,
+                    EventStatus.GAME, timestamp);
+            eventDAO.insert(notif);
+
+            defenderStartCostActivity = defenderStartCostActivity - defenderCostActivity;
+            game.setDefenderStartCostActivity(defenderStartCostActivity);
+            boolean updateDefenderCost = MultiplayerGameDAO.updateDefenderCost(game, defenderStartCostActivity);
+            mutationTester.runTestOnAllMultiplayerMutants(game, newTest, messages.getBridge());
+            game.update();
+            logger.info("Successfully created test {} ", newTest.getId());
+
+            TestTestedMutantsEvent ttme = new TestTestedMutantsEvent();
+            ttme.setGameId(gameId);
+            ttme.setUserId(login.getUserId());
+            notificationService.post(ttme);
+
+            // Clean up the session
+            previousSubmission.clear();
+            session.removeAttribute("selected_lines");
+            response.sendRedirect(ctx(request) + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
         }
-
-        logger.debug("New Test {} by user {}", newTest.getId(), login.getUserId());
-        TargetExecution compileTestTarget = TargetExecutionDAO.getTargetExecutionForTest(newTest, COMPILE_TEST);
-
-        if (game.isCapturePlayersIntention()) {
-            collectDefenderIntentions(newTest, selectedLines, selectedMutants);
-            // Store intentions in the session in case tests is broken we automatically re-select the same line
-            // TODO At the moment, there is only and only one line
-            session.setAttribute("selected_lines", selectedLines.iterator().next());
-        }
-
-        if (compileTestTarget.status != TargetExecution.Status.SUCCESS) {
-            messages.add(TEST_DID_NOT_COMPILE_MESSAGE).fadeOut(false);
-            // We escape the content of the message for new tests since user can embed there anything
-            String escapedHtml = StringEscapeUtils.escapeHtml(compileTestTarget.message);
-            // Extract the line numbers of the errors
-            List<Integer> errorLines = extractErrorLines(compileTestTarget.message);
-            // Store them in the session so they can be picked up later
-            previousSubmission.setErrorLines(errorLines);
-            // We introduce our decoration
-            String decorate = decorateWithLinksToCode(escapedHtml, true, false);
-            messages.add(decorate).escape(false);
-            //
-            previousSubmission.setTestCode(testText);
-            response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
-            return;
-        }
-        TargetExecution testOriginalTarget = TargetExecutionDAO.getTargetExecutionForTest(newTest, TEST_ORIGINAL);
-        if (testOriginalTarget.status != TargetExecution.Status.SUCCESS) {
-            // testOriginalTarget.state.equals(TargetExecution.Status.FAIL)
-            //     || testOriginalTarget.state.equals(TargetExecution.Status.ERROR)
-            messages.add(TEST_DID_NOT_PASS_ON_CUT_MESSAGE).fadeOut(false);
-            messages.add(StringEscapeUtils.escapeHtml(testOriginalTarget.message));
-            previousSubmission.setTestCode(testText);
-            response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
-            return;
-        }
-
-        messages.add(TEST_PASSED_ON_CUT_MESSAGE);
-
-        // Include Test Smells in the messages back to user
-        includeDetectTestSmellsInMessages(newTest);
-
-        final String message = login.getUser().getUsername() + " created a test";
-        final Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-        final Event notif = new Event(-1, gameId, login.getUserId(), message, EventType.DEFENDER_TEST_CREATED,
-                EventStatus.GAME, timestamp);
-        eventDAO.insert(notif);
-
-        mutationTester.runTestOnAllMultiplayerMutants(game, newTest, messages.getBridge());
-        game.update();
-        logger.info("Successfully created test {} ", newTest.getId());
-
-        TestTestedMutantsEvent ttme = new TestTestedMutantsEvent();
-        ttme.setGameId(gameId);
-        ttme.setUserId(login.getUserId());
-        notificationService.post(ttme);
-
-        // Clean up the session
-        previousSubmission.clear();
-        session.removeAttribute("selected_lines");
-        response.sendRedirect(ctx(request) + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
     }
 
     /**
@@ -589,129 +609,141 @@ public class MultiplayerGameManager extends HttpServlet {
             return;
         }
 
-        MutantSubmittedEvent mse = new MutantSubmittedEvent();
-        mse.setGameId(gameId);
-        mse.setUserId(login.getUserId());
-        notificationService.post(mse);
+        int attackerStartCostActivity = game.getAttackerStartCostActivity();
+        int attackerCostActivity = game.getAttackerCostActivity() * 2;
 
-        // Do the validation even before creating the mutant
-        CodeValidatorLevel codeValidatorLevel = game.getMutantValidatorLevel();
-        ValidationMessage validationMessage =
-                CodeValidator.validateMutantGetMessage(game.getCUT().getSourceCode(), mutantText, codeValidatorLevel);
-        boolean validationSuccess = validationMessage == ValidationMessage.MUTANT_VALIDATION_SUCCESS;
-
-        MutantValidatedEvent mve = new MutantValidatedEvent();
-        mve.setGameId(gameId);
-        mve.setUserId(login.getUserId());
-        mve.setSuccess(validationSuccess);
-        notificationService.post(mve);
-
-        if (!validationSuccess) {
-            // Mutant is either the same as the CUT or it contains invalid code
-            messages.add(validationMessage.get());
+        if (attackerStartCostActivity - attackerCostActivity < 0) {
+            messages.add(MUTANT_COST_WARNING);
+            previousSubmission.setMutantCode(mutantText);
             response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
             return;
         }
+        else {
+            MutantSubmittedEvent mse = new MutantSubmittedEvent();
+            mse.setGameId(gameId);
+            mse.setUserId(login.getUserId());
+            notificationService.post(mse);
 
-        Mutant existingMutant = gameManagingUtils.existingMutant(gameId, mutantText);
-        boolean duplicateCheckSuccess = existingMutant == null;
+            // Do the validation even before creating the mutant
+            CodeValidatorLevel codeValidatorLevel = game.getMutantValidatorLevel();
+            ValidationMessage validationMessage =
+                    CodeValidator.validateMutantGetMessage(game.getCUT().getSourceCode(), mutantText, codeValidatorLevel);
+            boolean validationSuccess = validationMessage == ValidationMessage.MUTANT_VALIDATION_SUCCESS;
 
-        MutantDuplicateCheckedEvent mdce = new MutantDuplicateCheckedEvent();
-        mdce.setGameId(gameId);
-        mdce.setUserId(login.getUserId());
-        mdce.setSuccess(duplicateCheckSuccess);
-        mdce.setDuplicateId(duplicateCheckSuccess ? null : existingMutant.getId());
-        notificationService.post(mdce);
+            MutantValidatedEvent mve = new MutantValidatedEvent();
+            mve.setGameId(gameId);
+            mve.setUserId(login.getUserId());
+            mve.setSuccess(validationSuccess);
+            notificationService.post(mve);
 
-        if (!duplicateCheckSuccess) {
-            messages.add(MUTANT_DUPLICATED_MESSAGE);
-            TargetExecution existingMutantTarget =
-                    TargetExecutionDAO.getTargetExecutionForMutant(existingMutant, COMPILE_MUTANT);
-            if (existingMutantTarget != null && existingMutantTarget.status != TargetExecution.Status.SUCCESS
-                    && existingMutantTarget.message != null && !existingMutantTarget.message.isEmpty()) {
-                messages.add(existingMutantTarget.message);
+            if (!validationSuccess) {
+                // Mutant is either the same as the CUT or it contains invalid code
+                messages.add(validationMessage.get());
+                response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
+                return;
             }
-            previousSubmission.setMutantCode(mutantText);
-            response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
-            return;
-        }
 
-        Mutant newMutant = gameManagingUtils.createMutant(gameId, game.getClassId(), mutantText,
-                login.getUserId(), MODE_BATTLEGROUND_DIR);
-        if (newMutant == null) {
-            messages.add(MUTANT_CREATION_ERROR_MESSAGE);
-            previousSubmission.setMutantCode(mutantText);
-            logger.debug("Error creating mutant. Game: {}, Class: {}, User: {}, Mutant: {}",
-                    gameId, game.getClassId(), login.getUserId(), mutantText);
-            response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
-            return;
-        }
+            Mutant existingMutant = gameManagingUtils.existingMutant(gameId, mutantText);
+            boolean duplicateCheckSuccess = existingMutant == null;
 
-        TargetExecution compileMutantTarget = TargetExecutionDAO.getTargetExecutionForMutant(newMutant,
-                COMPILE_MUTANT);
-        boolean compileSuccess = compileMutantTarget != null
-                && compileMutantTarget.status == TargetExecution.Status.SUCCESS;
-        String errorMessage = (compileMutantTarget != null
-                && compileMutantTarget.message != null
-                && !compileMutantTarget.message.isEmpty())
-                ? compileMutantTarget.message : null;
+            MutantDuplicateCheckedEvent mdce = new MutantDuplicateCheckedEvent();
+            mdce.setGameId(gameId);
+            mdce.setUserId(login.getUserId());
+            mdce.setSuccess(duplicateCheckSuccess);
+            mdce.setDuplicateId(duplicateCheckSuccess ? null : existingMutant.getId());
+            notificationService.post(mdce);
 
-        MutantCompiledEvent mce = new MutantCompiledEvent();
-        mce.setGameId(gameId);
-        mce.setUserId(login.getUserId());
-        mce.setMutantId(newMutant.getId());
-        mce.setSuccess(compileSuccess);
-        mce.setErrorMessage(errorMessage);
-
-        if (!compileSuccess) {
-            messages.add(MUTANT_UNCOMPILABLE_MESSAGE).fadeOut(false);
-            // There's a ton of defensive programming here...
-            if (errorMessage != null) {
-                // We escape the content of the message for new tests since user can embed there anything
-                String escapedHtml = StringEscapeUtils.escapeHtml(errorMessage);
-                // Extract the line numbers of the errors
-                List<Integer> errorLines = extractErrorLines(errorMessage);
-                // Store them in the session so they can be picked up later
-                previousSubmission.setErrorLines(errorLines);
-                // We introduce our decoration
-                String decorate = decorateWithLinksToCode(escapedHtml, false, true);
-                messages.add(decorate).escape(false);
-            }
-            previousSubmission.setMutantCode(mutantText);
-            response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
-            return;
-        }
-
-        messages.add(MUTANT_COMPILED_MESSAGE);
-        final String notificationMsg = login.getUser().getUsername() + " created a mutant.";
-        Event notif = new Event(-1, gameId, login.getUserId(), notificationMsg, EventType.ATTACKER_MUTANT_CREATED,
-                EventStatus.GAME, new Timestamp(System.currentTimeMillis() - 1000));
-        eventDAO.insert(notif);
-
-        mutationTester.runAllTestsOnMutant(game, newMutant, messages.getBridge());
-        game.update();
-
-        MutantTestedEvent mte = new MutantTestedEvent();
-        mte.setGameId(gameId);
-        mte.setUserId(login.getUserId());
-        mte.setMutantId(newMutant.getId());
-        notificationService.post(mte);
-
-        if (game.isCapturePlayersIntention()) {
-            AttackerIntention intention = AttackerIntention.fromString(request.getParameter("attacker_intention"));
-            // This parameter is required !
-            if (intention == null) {
-                messages.add(ValidationMessage.MUTANT_MISSING_INTENTION.toString());
+            if (!duplicateCheckSuccess) {
+                messages.add(MUTANT_DUPLICATED_MESSAGE);
+                TargetExecution existingMutantTarget =
+                        TargetExecutionDAO.getTargetExecutionForMutant(existingMutant, COMPILE_MUTANT);
+                if (existingMutantTarget != null && existingMutantTarget.status != TargetExecution.Status.SUCCESS
+                        && existingMutantTarget.message != null && !existingMutantTarget.message.isEmpty()) {
+                    messages.add(existingMutantTarget.message);
+                }
                 previousSubmission.setMutantCode(mutantText);
                 response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
                 return;
             }
-            collectAttackerIntentions(newMutant, intention);
+
+            Mutant newMutant = gameManagingUtils.createMutantWihCost(gameId, game.getClassId(), mutantText,
+                    login.getUserId(), MODE_BATTLEGROUND_DIR, attackerStartCostActivity, attackerCostActivity);
+            if (newMutant == null) {
+                messages.add(MUTANT_CREATION_ERROR_MESSAGE);
+                previousSubmission.setMutantCode(mutantText);
+                logger.debug("Error creating mutant. Game: {}, Class: {}, User: {}, Mutant: {}",
+                        gameId, game.getClassId(), login.getUserId(), mutantText);
+                response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
+                return;
+            }
+
+            TargetExecution compileMutantTarget = TargetExecutionDAO.getTargetExecutionForMutant(newMutant,
+                    COMPILE_MUTANT);
+            boolean compileSuccess = compileMutantTarget != null
+                    && compileMutantTarget.status == TargetExecution.Status.SUCCESS;
+            String errorMessage = (compileMutantTarget != null
+                    && compileMutantTarget.message != null
+                    && !compileMutantTarget.message.isEmpty())
+                    ? compileMutantTarget.message : null;
+
+            MutantCompiledEvent mce = new MutantCompiledEvent();
+            mce.setGameId(gameId);
+            mce.setUserId(login.getUserId());
+            mce.setMutantId(newMutant.getId());
+            mce.setSuccess(compileSuccess);
+            mce.setErrorMessage(errorMessage);
+
+            if (!compileSuccess) {
+                messages.add(MUTANT_COST_WARNING_TWO);
+                messages.add(MUTANT_UNCOMPILABLE_MESSAGE).fadeOut(false);
+                // There's a ton of defensive programming here...
+                if (errorMessage != null) {
+                    // We escape the content of the message for new tests since user can embed there anything
+                    String escapedHtml = StringEscapeUtils.escapeHtml(errorMessage);
+                    // Extract the line numbers of the errors
+                    List<Integer> errorLines = extractErrorLines(errorMessage);
+                    // Store them in the session so they can be picked up later
+                    previousSubmission.setErrorLines(errorLines);
+                    // We introduce our decoration
+                    String decorate = decorateWithLinksToCode(escapedHtml, false, true);
+                    messages.add(decorate).escape(false);
+                }
+                previousSubmission.setMutantCode(mutantText);
+                response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
+                return;
+            }
+
+            messages.add(MUTANT_COMPILED_MESSAGE);
+            final String notificationMsg = login.getUser().getUsername() + " created a mutant.";
+            Event notif = new Event(-1, gameId, login.getUserId(), notificationMsg, EventType.ATTACKER_MUTANT_CREATED,
+                    EventStatus.GAME, new Timestamp(System.currentTimeMillis() - 1000));
+            eventDAO.insert(notif);
+
+            mutationTester.runAllTestsOnMutant(game, newMutant, messages.getBridge());
+            game.update();
+
+            MutantTestedEvent mte = new MutantTestedEvent();
+            mte.setGameId(gameId);
+            mte.setUserId(login.getUserId());
+            mte.setMutantId(newMutant.getId());
+            notificationService.post(mte);
+
+            if (game.isCapturePlayersIntention()) {
+                AttackerIntention intention = AttackerIntention.fromString(request.getParameter("attacker_intention"));
+                // This parameter is required !
+                if (intention == null) {
+                    messages.add(ValidationMessage.MUTANT_MISSING_INTENTION.toString());
+                    previousSubmission.setMutantCode(mutantText);
+                    response.sendRedirect(contextPath + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
+                    return;
+                }
+                collectAttackerIntentions(newMutant, intention);
+            }
+            // Clean the mutated code only if mutant is accepted
+            previousSubmission.clear();
+            logger.info("Successfully created mutant {} ", newMutant.getId());
+            response.sendRedirect(ctx(request) + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
         }
-        // Clean the mutated code only if mutant is accepted
-        previousSubmission.clear();
-        logger.info("Successfully created mutant {} ", newMutant.getId());
-        response.sendRedirect(ctx(request) + Paths.BATTLEGROUND_GAME + "?gameId=" + gameId);
     }
 
     @SuppressWarnings("Duplicates")
