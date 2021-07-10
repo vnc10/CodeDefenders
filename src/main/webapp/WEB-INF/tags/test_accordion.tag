@@ -270,7 +270,7 @@
                     { data: genCoveredMutants, title: '' },
                     { data: genKilledMutants, title: '' },
                     { data: genPoints, title: '' },
-                    { data: genSmells, title: '' },
+                    // { data: genSmells, title: '' },
                     { data: genViewButton, title: '' }
                 ],
                 scrollY: '400px',
